@@ -81,11 +81,6 @@ func (v *verifier) verify(sourceFileReader io.ReadSeeker, verifyOptions *VerifyO
 	// classify import info types - for each info type assign an "importType"
 	v.classifyImportTypes(importInfoGroups)
 
-	// verify that all groups are sorted amongst themselves
-	if err := v.verifyImportInfoGroupsOrder(importInfoGroups); err != nil {
-		return err
-	}
-
 	// get scheme by type
 	verificationScheme := v.getVerificationScheme()
 
@@ -104,6 +99,11 @@ func (v *verifier) verify(sourceFileReader io.ReadSeeker, verifyOptions *VerifyO
 		if err := v.verifyGroupOrder(importInfoGroups, verificationScheme.GetAllowedImportOrders()); err != nil {
 			return err
 		}
+	}
+
+	// verify that all groups are sorted amongst themselves
+	if err := v.verifyImportInfoGroupsOrder(importInfoGroups); err != nil {
+		return err
 	}
 
 	return nil

@@ -227,6 +227,30 @@ import (
 				"Imports of different types are not allowed in the same group",
 			},
 		},
+		{
+			name: "Unsorted and mixed",
+			contents: `package fixtures
+import (
+    "fmt"
+    "os"
+    "path"
+
+    "github.com/another/3rdparty"
+    "github.com/pavius/impi/a"
+    "github.com/pavius/impi/b"
+    // some comment
+    "github.com/pavius/impi/c"
+
+    // another comment
+    "github.com/another/3rdparty"
+    "github.com/some/thirdparty"
+	"context"
+)
+`,
+			expectedErrorStrings: []string{
+				"Imports of different types are not allowed in the same group",
+			},
+		},
 	}
 
 	for _, verificationTest := range verificationTests {
