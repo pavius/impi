@@ -33,7 +33,9 @@ impi [--local <local import prefix>] --scheme <scheme> <packages>
 ```
 
 [nuclio](https://github.com/nuclio/nuclio) uses impi as follows:
-`impi --local github.com/nuclio/nuclio/ --scheme stdLocalThirdParty ./cmd/... ./pkg/...`
+```
+impi --local github.com/nuclio/nuclio/ --scheme stdLocalThirdParty ./cmd/... ./pkg/...
+```
 
 ## Supported schemes
 
