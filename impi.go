@@ -37,6 +37,12 @@ const (
 	// - local imports (where local prefix is specified in verification options)
 	// - non-standard imports
 	ImportGroupVerificationSchemeStdLocalThirdParty
+
+	// ImportGroupVerificationSchemeStdThirdPartyLocal allows for up to three groups in the following order:
+	// - standard imports
+	// - non-standard imports
+	// - local imports (where local prefix is specified in verification options)
+	ImportGroupVerificationSchemeStdThirdPartyLocal
 )
 
 // VerifyOptions specifies how to perform verification

@@ -16,6 +16,18 @@ func (cer *consoleErrorReporter) Report(err impi.VerificationError) {
 }
 
 var localPrefix = flag.String("local", "", "prefix of the local repository")
+var scheme = flag.String("scheme", "", "verification scheme to enforce. one of stdLocalThirdParty/stdThirdPartyLocal")
+
+func getVerificationSchemeType(scheme string) (impi.ImportGroupVerificationScheme, error) {
+	switch scheme {
+	case "stdLocalThirdParty":
+		return impi.ImportGroupVerificationSchemeStdLocalThirdParty, nil
+	case "stdThirdPartyLocal":
+		return impi.ImportGroupVerificationSchemeStdThirdPartyLocal, nil
+	default:
+		return 0, fmt.Errorf("Unsupported verification scheme: %s", scheme)
+	}
+}
 
 func run() error {
 	numCPUs := runtime.NumCPU()
@@ -23,6 +35,11 @@ func run() error {
 
 	// parse flags
 	flag.Parse()
+
+	verificationScheme, err := getVerificationSchemeType(*scheme)
+	if err != nil {
+		return err
+	}
 
 	// TODO: can parallelize across root paths
 	for argIndex := 0; argIndex < flag.NArg(); argIndex++ {
@@ -36,6 +53,7 @@ func run() error {
 		err = impiInstance.Verify(rootPath, &impi.VerifyOptions{
 			SkipTests:   false,
 			LocalPrefix: *localPrefix,
+			Scheme:      verificationScheme,
 		}, &consoleErrorReporter{})
 
 		if err != nil {
