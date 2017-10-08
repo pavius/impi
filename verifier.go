@@ -30,6 +30,14 @@ const (
 	importTypeLocalOrThirdParty
 )
 
+var importTypeName = []string{
+	"Unknown",
+	"Std",
+	"Local",
+	"Third party",
+	"Local or third party",
+}
+
 type verificationScheme interface {
 
 	// getMaxNumGroups returns max number of groups the scheme allows
@@ -322,5 +330,11 @@ func (v *verifier) verifyGroupOrder(importInfoGroups []importInfoGroup, allowedI
 		}
 	}
 
-	return fmt.Errorf("Import groups are not in the proper order")
+	// convert to string for a clearer error
+	existingImportOrderString := []string{}
+	for _, importType := range existingImportOrder {
+		existingImportOrderString = append(existingImportOrderString, importTypeName[importType])
+	}
+
+	return fmt.Errorf("Import groups are not in the proper order: %q", existingImportOrderString)
 }

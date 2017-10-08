@@ -66,6 +66,7 @@ func run() error {
 
 func main() {
 	if err := run(); err != nil {
+		fmt.Printf("\nimpi verification failed: %s\n", err.Error())
 		os.Exit(1)
 	}
 }

@@ -131,7 +131,7 @@ import (
 )
 `,
 			expectedErrorStrings: []string{
-				"Import groups are not in the proper order",
+				`Import groups are not in the proper order: ["Std" "Third party" "Local"]`,
 			},
 		},
 		{
