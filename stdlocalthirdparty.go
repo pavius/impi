@@ -1,6 +1,6 @@
 package impi
 
-type stdLocalThirdParty struct {}
+type stdLocalThirdParty struct{}
 
 // NewstdLocalThirdParty returns a new stdLocalThirdParty
 func newStdLocalThirdParty() *stdLocalThirdParty {

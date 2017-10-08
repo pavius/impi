@@ -9,7 +9,7 @@ import (
 	"github.com/pavius/impi"
 )
 
-type consoleErrorReporter struct {}
+type consoleErrorReporter struct{}
 
 func (cer *consoleErrorReporter) Report(err impi.VerificationError) {
 	fmt.Printf("%s: %s\n", err.FilePath, err.Error())

@@ -113,7 +113,7 @@ func (v *verifier) groupImportInfos(importInfos []importInfo, importLineNumbers 
 
 	// initialize an import group with the first group already inserted
 	importInfoGroups := []importInfoGroup{
-		importInfoGroup{},
+		{},
 	}
 
 	// set current group - it'll change as new groups are found
