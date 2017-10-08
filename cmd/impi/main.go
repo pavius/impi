@@ -9,20 +9,37 @@ import (
 	"github.com/pavius/impi"
 )
 
-type consoleErrorReporter struct {}
+type consoleErrorReporter struct{}
 
 func (cer *consoleErrorReporter) Report(err impi.VerificationError) {
 	fmt.Printf("%s: %s\n", err.FilePath, err.Error())
 }
 
 var localPrefix = flag.String("local", "", "prefix of the local repository")
+var scheme = flag.String("scheme", "", "verification scheme to enforce. one of stdLocalThirdParty/stdThirdPartyLocal")
 
-func main() {
+func getVerificationSchemeType(scheme string) (impi.ImportGroupVerificationScheme, error) {
+	switch scheme {
+	case "stdLocalThirdParty":
+		return impi.ImportGroupVerificationSchemeStdLocalThirdParty, nil
+	case "stdThirdPartyLocal":
+		return impi.ImportGroupVerificationSchemeStdThirdPartyLocal, nil
+	default:
+		return 0, fmt.Errorf("Unsupported verification scheme: %s", scheme)
+	}
+}
+
+func run() error {
 	numCPUs := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPUs)
 
 	// parse flags
 	flag.Parse()
+
+	verificationScheme, err := getVerificationSchemeType(*scheme)
+	if err != nil {
+		return err
+	}
 
 	// TODO: can parallelize across root paths
 	for argIndex := 0; argIndex < flag.NArg(); argIndex++ {
@@ -30,17 +47,26 @@ func main() {
 
 		impiInstance, err := impi.NewImpi(numCPUs)
 		if err != nil {
-			fmt.Errorf("Failed to create impi: %s", err.Error())
-			os.Exit(1)
+			return fmt.Errorf("Failed to create impi: %s", err.Error())
 		}
 
 		err = impiInstance.Verify(rootPath, &impi.VerifyOptions{
 			SkipTests:   false,
 			LocalPrefix: *localPrefix,
+			Scheme:      verificationScheme,
 		}, &consoleErrorReporter{})
 
 		if err != nil {
-			os.Exit(1)
+			return err
 		}
+	}
+
+	return nil
+}
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\nimpi verification failed: %s\n", err.Error())
+		os.Exit(1)
 	}
 }

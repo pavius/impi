@@ -30,16 +30,24 @@ const (
 	importTypeLocalOrThirdParty
 )
 
+var importTypeName = []string{
+	"Unknown",
+	"Std",
+	"Local",
+	"Third party",
+	"Local or third party",
+}
+
 type verificationScheme interface {
 
-	// GetMaxNumGroups returns max number of groups the scheme allows
-	GetMaxNumGroups() int
+	// getMaxNumGroups returns max number of groups the scheme allows
+	getMaxNumGroups() int
 
-	// GetMixedGroupsAllowed returns whether a group can contain imports of different types
-	GetMixedGroupsAllowed() bool
+	// getMixedGroupsAllowed returns whether a group can contain imports of different types
+	getMixedGroupsAllowed() bool
 
-	// GetAllowedImportOrders returns which group orders are allowed
-	GetAllowedImportOrders() [][]importType
+	// getAllowedImportOrders returns which group orders are allowed
+	getAllowedImportOrders() [][]importType
 }
 
 type importInfo struct {
@@ -82,21 +90,24 @@ func (v *verifier) verify(sourceFileReader io.ReadSeeker, verifyOptions *VerifyO
 	v.classifyImportTypes(importInfoGroups)
 
 	// get scheme by type
-	verificationScheme := v.getVerificationScheme()
+	verificationScheme, err := v.getVerificationScheme()
+	if err != nil {
+		return err
+	}
 
 	// verify that we don't have too many groups
-	if verificationScheme.GetMaxNumGroups() < len(importInfoGroups) {
+	if verificationScheme.getMaxNumGroups() < len(importInfoGroups) {
 		return fmt.Errorf("Expected no more than 3 groups, got %d", len(importInfoGroups))
 	}
 
 	// if the scheme disallowed mixed groups, check that there are no mixed groups
-	if !verificationScheme.GetMixedGroupsAllowed() {
+	if !verificationScheme.getMixedGroupsAllowed() {
 		if err := v.verifyNonMixedGroups(importInfoGroups); err != nil {
 			return err
 		}
 
 		// verify group order
-		if err := v.verifyGroupOrder(importInfoGroups, verificationScheme.GetAllowedImportOrders()); err != nil {
+		if err := v.verifyGroupOrder(importInfoGroups, verificationScheme.getAllowedImportOrders()); err != nil {
 			return err
 		}
 	}
@@ -113,7 +124,7 @@ func (v *verifier) groupImportInfos(importInfos []importInfo, importLineNumbers 
 
 	// initialize an import group with the first group already inserted
 	importInfoGroups := []importInfoGroup{
-		importInfoGroup{},
+		{},
 	}
 
 	// set current group - it'll change as new groups are found
@@ -276,8 +287,15 @@ func (v *verifier) classifyImportTypes(importInfoGroups []importInfoGroup) {
 	}
 }
 
-func (v *verifier) getVerificationScheme() verificationScheme {
-	return newStdLocalThirdParty()
+func (v *verifier) getVerificationScheme() (verificationScheme, error) {
+	switch v.verifyOptions.Scheme {
+	case ImportGroupVerificationSchemeStdLocalThirdParty:
+		return newStdLocalThirdPartyScheme(), nil
+	case ImportGroupVerificationSchemeStdThirdPartyLocal:
+		return newStdThirdPartyLocalScheme(), nil
+	default:
+		return nil, errors.New("Unsupported verification scheme")
+	}
 }
 
 func (v *verifier) verifyNonMixedGroups(importInfoGroups []importInfoGroup) error {
@@ -312,5 +330,11 @@ func (v *verifier) verifyGroupOrder(importInfoGroups []importInfoGroup, allowedI
 		}
 	}
 
-	return fmt.Errorf("Import groups are not in the proper order")
+	// convert to string for a clearer error
+	existingImportOrderString := []string{}
+	for _, importType := range existingImportOrder {
+		existingImportOrderString = append(existingImportOrderString, importTypeName[importType])
+	}
+
+	return fmt.Errorf("Import groups are not in the proper order: %q", existingImportOrderString)
 }
