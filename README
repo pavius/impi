@@ -1,3 +1,0 @@
-# impi
-Verify proper golang import directives, beyond the capability of gofmt and goimports.
-
