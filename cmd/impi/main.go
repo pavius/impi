@@ -17,7 +17,7 @@ func (cer *consoleErrorReporter) Report(err impi.VerificationError) {
 
 var localPrefix = flag.String("local", "", "prefix of the local repository")
 
-func main() {
+func run() error {
 	numCPUs := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPUs)
 
@@ -30,8 +30,7 @@ func main() {
 
 		impiInstance, err := impi.NewImpi(numCPUs)
 		if err != nil {
-			fmt.Errorf("Failed to create impi: %s", err.Error())
-			os.Exit(1)
+			return fmt.Errorf("Failed to create impi: %s", err.Error())
 		}
 
 		err = impiInstance.Verify(rootPath, &impi.VerifyOptions{
@@ -40,7 +39,15 @@ func main() {
 		}, &consoleErrorReporter{})
 
 		if err != nil {
-			os.Exit(1)
+			return err
 		}
+	}
+
+	return nil
+}
+
+func main() {
+	if err := run(); err != nil {
+		os.Exit(1)
 	}
 }

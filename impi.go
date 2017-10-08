@@ -27,12 +27,12 @@ const (
 	// ImportGroupVerificationSchemeSingle allows for a single, sorted group
 	ImportGroupVerificationSchemeSingle = ImportGroupVerificationScheme(iota)
 
-	// ImportGroupVerificationSchemeStdAndNonStd allows for up to two groups in the following order:
+	// ImportGroupVerificationSchemeStdNonStd allows for up to two groups in the following order:
 	// - standard imports
 	// - non-standard imports
 	ImportGroupVerificationSchemeStdNonStd
 
-	// ImportGroupVerificationSchemeStdLocalAndThirdParty allows for up to three groups in the following order:
+	// ImportGroupVerificationSchemeStdLocalThirdParty allows for up to three groups in the following order:
 	// - standard imports
 	// - local imports (where local prefix is specified in verification options)
 	// - non-standard imports
@@ -46,6 +46,7 @@ type VerifyOptions struct {
 	LocalPrefix string
 }
 
+// VerificationError holds an error and a file path on which the error occurred
 type VerificationError struct {
 	error
 	FilePath string
