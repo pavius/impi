@@ -65,6 +65,11 @@ func run() error {
 }
 
 func main() {
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "usage: %s PACKAGE [PACKAGE ...]\n", os.Args[0])
+		flag.PrintDefaults()
+	}
+
 	if err := run(); err != nil {
 		fmt.Printf("\nimpi verification failed: %s\n", err.Error())
 		os.Exit(1)
