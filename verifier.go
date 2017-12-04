@@ -155,7 +155,21 @@ func (v *verifier) groupImportInfos(importInfos []importInfo, importLineNumbers 
 		})
 	}
 
-	return importInfoGroups
+	return v.filterImportC(importInfoGroups)
+}
+
+// filter out single `import "C"` from groups since it needs to be on it's own line
+func (v *verifier) filterImportC(importInfoGroups []importInfoGroup) []importInfoGroup {
+	var filteredGroups []importInfoGroup
+
+	for _, importInfoGroup := range importInfoGroups {
+		if len(importInfoGroup.importInfos) == 1 && importInfoGroup.importInfos[0].value == "C" {
+			continue
+		}
+		filteredGroups = append(filteredGroups, importInfoGroup)
+	}
+
+	return filteredGroups
 }
 
 func (v *verifier) getImportPos(sourceFileReader io.ReadSeeker) ([]int, error) {

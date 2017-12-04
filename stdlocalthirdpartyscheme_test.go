@@ -226,6 +226,25 @@ import (
 				"Imports of different types are not allowed in the same group",
 			},
 		},
+		{
+			name: `import "C"`,
+			contents: `package impi
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/pavius/impi"
+
+	"github.com/pkg/errors"
+)
+
+/*
+#include <stdlib.h>
+*/
+import "C"
+`,
+		},
 	}
 
 	s.verifyTestCases(verificationTestCases)
