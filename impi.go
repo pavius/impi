@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/kisielk/gotool"
@@ -47,9 +48,10 @@ const (
 
 // VerifyOptions specifies how to perform verification
 type VerifyOptions struct {
-	SkipTests   bool
-	Scheme      ImportGroupVerificationScheme
-	LocalPrefix string
+	SkipTests     bool
+	Scheme        ImportGroupVerificationScheme
+	LocalPrefix   string
+	IgnorePattern string
 }
 
 // VerificationError holds an error and a file path on which the error occurred
@@ -226,6 +228,11 @@ func (i *Impi) addFilePathToFilePathsChan(filePath string) {
 
 	// skip tests if not desired
 	if strings.HasSuffix(filePath, "_test.go") && i.verifyOptions.SkipTests {
+		return
+	}
+
+	// cmd/impi/main.go should check the patters
+	if match, _ := filepath.Match(i.verifyOptions.IgnorePattern, filepath.Base(filePath)); match {
 		return
 	}
 
