@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 
 	"github.com/pavius/impi"
@@ -17,6 +18,7 @@ func (cer *consoleErrorReporter) Report(err impi.VerificationError) {
 
 var localPrefix = flag.String("local", "", "prefix of the local repository")
 var scheme = flag.String("scheme", "", "verification scheme to enforce. one of stdLocalThirdParty/stdThirdPartyLocal")
+var ignorePattern = flag.String("ignore", "", "file pattern to ignore (base name, not path)")
 
 func getVerificationSchemeType(scheme string) (impi.ImportGroupVerificationScheme, error) {
 	switch scheme {
@@ -36,6 +38,10 @@ func run() error {
 	// parse flags
 	flag.Parse()
 
+	if _, err := filepath.Match(*ignorePattern, "impi.go"); err != nil {
+		return fmt.Errorf("%q - %s", *ignorePattern, err)
+	}
+
 	verificationScheme, err := getVerificationSchemeType(*scheme)
 	if err != nil {
 		return err
@@ -51,9 +57,10 @@ func run() error {
 		}
 
 		err = impiInstance.Verify(rootPath, &impi.VerifyOptions{
-			SkipTests:   false,
-			LocalPrefix: *localPrefix,
-			Scheme:      verificationScheme,
+			SkipTests:     false,
+			LocalPrefix:   *localPrefix,
+			Scheme:        verificationScheme,
+			IgnorePattern: *ignorePattern,
 		}, &consoleErrorReporter{})
 
 		if err != nil {
