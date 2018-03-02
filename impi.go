@@ -5,19 +5,20 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/kisielk/gotool"
+	"regexp"
 )
 
 // Impi is a single instance that can perform verification on a path
 type Impi struct {
-	numWorkers    int
-	resultChan    chan interface{}
-	filePathsChan chan string
-	stopChan      chan bool
-	verifyOptions *VerifyOptions
+	numWorkers      int
+	resultChan      chan interface{}
+	filePathsChan   chan string
+	stopChan        chan bool
+	verifyOptions   *VerifyOptions
+	SkipPathRegexes []*regexp.Regexp
 }
 
 // ImportGroupVerificationScheme specifies what to check when inspecting import groups
@@ -48,10 +49,10 @@ const (
 
 // VerifyOptions specifies how to perform verification
 type VerifyOptions struct {
-	SkipTests     bool
-	Scheme        ImportGroupVerificationScheme
-	LocalPrefix   string
-	IgnorePattern string
+	SkipTests   bool
+	Scheme      ImportGroupVerificationScheme
+	LocalPrefix string
+	SkipPaths   []string
 }
 
 // VerificationError holds an error and a file path on which the error occurred
@@ -83,6 +84,16 @@ func (i *Impi) Verify(rootPath string, verifyOptions *VerifyOptions, errorReport
 
 	// save stuff for current session
 	i.verifyOptions = verifyOptions
+
+	// compile skip regex
+	for _, skipPath := range verifyOptions.SkipPaths {
+		skipPathRegex, err := regexp.Compile(skipPath)
+		if err != nil {
+			return err
+		}
+
+		i.SkipPathRegexes = append(i.SkipPathRegexes, skipPathRegex)
+	}
 
 	// spin up the workers do handle all the data in the channel. workers will die
 	if err := i.createWorkers(i.numWorkers); err != nil {
@@ -232,8 +243,10 @@ func (i *Impi) addFilePathToFilePathsChan(filePath string) {
 	}
 
 	// cmd/impi/main.go should check the patters
-	if match, _ := filepath.Match(i.verifyOptions.IgnorePattern, filepath.Base(filePath)); match {
-		return
+	for _, skipPathRegex := range i.SkipPathRegexes {
+		if skipPathRegex.Match([]byte(filePath)) {
+			return
+		}
 	}
 
 	// write to paths chan

@@ -4,21 +4,28 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/pavius/impi"
 )
 
 type consoleErrorReporter struct{}
 
+type stringArrayFlags []string
+
+func (saf *stringArrayFlags) String() string {
+    return strings.Join(*saf, ",")
+}
+
+func (saf *stringArrayFlags) Set(value string) error {
+    *saf = append(*saf, value)
+    return nil
+}
+
 func (cer *consoleErrorReporter) Report(err impi.VerificationError) {
 	fmt.Printf("%s: %s\n", err.FilePath, err.Error())
 }
-
-var localPrefix = flag.String("local", "", "prefix of the local repository")
-var scheme = flag.String("scheme", "", "verification scheme to enforce. one of stdLocalThirdParty/stdThirdPartyLocal")
-var ignorePattern = flag.String("ignore", "", "file pattern to ignore (base name, not path)")
 
 func getVerificationSchemeType(scheme string) (impi.ImportGroupVerificationScheme, error) {
 	switch scheme {
@@ -32,15 +39,18 @@ func getVerificationSchemeType(scheme string) (impi.ImportGroupVerificationSchem
 }
 
 func run() error {
+
+	var localPrefix = flag.String("local", "", "prefix of the local repository")
+	var scheme = flag.String("scheme", "", "verification scheme to enforce. one of stdLocalThirdParty/stdThirdPartyLocal")
+
+	var skipPaths stringArrayFlags
+	flag.Var(&skipPaths, "skip", "paths to skip (regex)")
+
 	numCPUs := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPUs)
 
 	// parse flags
 	flag.Parse()
-
-	if _, err := filepath.Match(*ignorePattern, "impi.go"); err != nil {
-		return fmt.Errorf("%q - %s", *ignorePattern, err)
-	}
 
 	verificationScheme, err := getVerificationSchemeType(*scheme)
 	if err != nil {
@@ -60,7 +70,7 @@ func run() error {
 			SkipTests:     false,
 			LocalPrefix:   *localPrefix,
 			Scheme:        verificationScheme,
-			IgnorePattern: *ignorePattern,
+			SkipPaths:     skipPaths,
 		}, &consoleErrorReporter{})
 
 		if err != nil {
