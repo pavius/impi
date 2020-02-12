@@ -7,10 +7,15 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"io/ioutil"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 )
+
+// This regex is to appear in generated code.
+var generatedRegex = regexp.MustCompile("// Code generated .* DO NOT EDIT\\.")
 
 type verifier struct {
 	verifyOptions *VerifyOptions
@@ -62,6 +67,23 @@ func newVerifier() (*verifier, error) {
 
 func (v *verifier) verify(sourceFileReader io.ReadSeeker, verifyOptions *VerifyOptions) error {
 	v.verifyOptions = verifyOptions
+
+	if verifyOptions.IgnoreGenerated {
+		// The line specifying that the code was generated can be found anywhere
+		// within a file. In practice, it is the first line.
+		fileContents, err := ioutil.ReadAll(sourceFileReader)
+		if err != nil {
+			return err
+		}
+
+		if generatedRegex.Match(fileContents) {
+			return nil
+		}
+
+		if _, err := sourceFileReader.Seek(0, 0); err != nil {
+			return err
+		}
+	}
 
 	// get lines on which imports start and end
 	importLineNumbers, err := v.getImportPos(sourceFileReader)
