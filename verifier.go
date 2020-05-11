@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"go/parser"
+	"go/scanner"
 	"go/token"
 	"io"
 	"io/ioutil"
@@ -217,40 +218,44 @@ func (v *verifier) readImportInfos(startLineNum int, endLineNum int, reader io.R
 	}
 
 	var importInfos []importInfo
-	scanner := bufio.NewScanner(reader)
+	s := bufio.NewScanner(reader)
 
-	for lineNum := 1; scanner.Scan(); lineNum++ {
-		lineValue := scanner.Text()
-
+	for lineNum := 1; s.Scan(); lineNum++ {
 		if lineNum >= startLineNum && lineNum <= endLineNum {
-
-			// remove spaces and tabs around the thing
-			lineValue = strings.TrimSpace(lineValue)
-
-			// remove quotations
-			lineValue = strings.Replace(lineValue, `"`, "", -1)
-
-			// remove "import"
-			lineValue = strings.TrimPrefix(lineValue, "import")
-
-			// remove spaces and tabs around the thing again
-			lineValue = strings.TrimSpace(lineValue)
-
-			// if the import is two words, it could be a _, . or aliased import
-			// we only care about the value
-			splitLineValue := strings.SplitN(lineValue, " ", 2)
-			if len(splitLineValue) == 2 {
-				lineValue = splitLineValue[1]
+			path, err := extractImportPath(s.Bytes())
+			if err != nil {
+				return nil, err
 			}
 
 			importInfos = append(importInfos, importInfo{
 				lineNum: lineNum,
-				value:   lineValue,
+				value:   strings.Replace(path, `"`, "", -1),
 			})
 		}
 	}
 
 	return importInfos, nil
+}
+
+func extractImportPath(line []byte) (string, error) {
+	s := scanner.Scanner{}
+	fset := token.NewFileSet()
+	file := fset.AddFile("", fset.Base(), len(line))
+	s.Init(file, line, nil, 0)
+
+	var val string
+	for {
+		_, tok, lit := s.Scan()
+		switch tok {
+		case token.EOF:
+			return val, nil
+		case token.STRING:
+			if val != "" {
+				return "", fmt.Errorf("parsing failed, multiple strings on import line: %v", line)
+			}
+			val = lit
+		}
+	}
 }
 
 func findIntInIntSlice(slice []int, value int) int {
