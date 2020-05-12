@@ -251,7 +251,7 @@ func extractImportPath(line []byte) (string, error) {
 			return val, nil
 		case token.STRING:
 			if val != "" {
-				return "", fmt.Errorf("parsing failed, multiple strings on import line: %v", line)
+				return "", fmt.Errorf("parsing failed, multiple strings on import line: %v", string(line))
 			}
 			val = lit
 		}
