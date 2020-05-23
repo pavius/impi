@@ -125,3 +125,40 @@ import (
 func TestNotIgnoreGeneratedFileTestSuite(t *testing.T) {
 	suite.Run(t, new(NotIgnoreGeneratedFileTestSuite))
 }
+
+type ImportGroupWithCommentTestSuite struct {
+	VerifierTestSuite
+}
+
+func (s *ImportGroupWithCommentTestSuite) SetupSuite() {
+	s.options.Scheme = ImportGroupVerificationSchemeStdLocalThirdParty
+	s.options.LocalPrefix = "github.com/pavius/impi"
+}
+
+func (s *ImportGroupWithCommentTestSuite) TestValidAllGroups() {
+
+	verificationTestCases := []verificationTestCase{
+		{
+			name: "groups with comments",
+			contents: `
+package fixtures
+
+import (
+    "fmt"
+    // comment
+    "os" // comment
+    . "path" // comment
+
+    // comment
+    "github.com/pavius/impi/test"
+)
+`,
+			expectedErrorStrings: nil,
+		},
+	}
+	s.verifyTestCases(verificationTestCases)
+}
+
+func TestImportGroupWithCommentTestSuite(t *testing.T) {
+	suite.Run(t, new(ImportGroupWithCommentTestSuite))
+}
