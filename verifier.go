@@ -63,7 +63,6 @@ type importDeclaration struct {
 type importInfo struct {
 	lineNumStart   int
 	lineNumEnd     int
-	lineNumImport  int
 	path           string
 	classifiedType importType
 }
@@ -199,7 +198,7 @@ func filterImportC(importDecls []importDeclaration) []importDeclaration {
 	return filteredDecls
 }
 
-func (v *verifier) parseImports(sourceFileReader io.ReadSeeker) ([]importDeclaration, error){
+func (v *verifier) parseImports(sourceFileReader io.ReadSeeker) ([]importDeclaration, error) {
 	sourceFileSet := token.NewFileSet()
 
 	sourceNode, err := parser.ParseFile(sourceFileSet, "", sourceFileReader, parser.ImportsOnly|parser.ParseComments)
@@ -223,18 +222,18 @@ func (v *verifier) parseImports(sourceFileReader io.ReadSeeker) ([]importDeclara
 
 		for _, spec := range genDecl.Specs {
 			importSpec := spec.(*ast.ImportSpec)
-			importLine := sourceFileSet.Position(importSpec.Pos()).Line
-			importEndLine := sourceFileSet.Position(importSpec.End()).Line
-			lineStart := importLine
+			var lineStart int
 			if importSpec.Doc != nil && len(importSpec.Doc.List) > 0 {
-				// if there are comments we'll use the line of the first comment
+				// if there are comments we'll use the line number of the first comment
 				lineStart = sourceFileSet.Position(importSpec.Doc.List[0].Pos()).Line
+			} else {
+				// otherwise use the line number of the import itself
+				lineStart = sourceFileSet.Position(importSpec.Pos()).Line
 			}
 			importPath := strings.Trim(importSpec.Path.Value, `"`) // remove outer quotes
 			importDecl.importInfos = append(importDecl.importInfos, importInfo{
 				lineNumStart:   lineStart,
-				lineNumEnd:     importEndLine,
-				lineNumImport:  importLine,
+				lineNumEnd:     sourceFileSet.Position(importSpec.End()).Line,
 				path:           importPath,
 				classifiedType: v.classifyImportType(importPath),
 			})
