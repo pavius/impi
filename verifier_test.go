@@ -148,12 +148,28 @@ import (
     // comment
     "os" // comment
     . "path" // comment
+    // comment
+
+    // standalone
+    // comment
+
+    /*
+     standalone
+     comment
+    */
 
     // comment
-    "github.com/pavius/impi/test"
+    "github.com/pavius/impi/a"
+    /*
+     comment line 1
+     comment line 2
+    */
+    _ "github.com/pavius/impi/b"
+    /*
+     comment
+    */
 )
 `,
-			expectedErrorStrings: nil,
 		},
 	}
 	s.verifyTestCases(verificationTestCases)

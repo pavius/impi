@@ -29,23 +29,41 @@ import (
 `,
 		},
 		{
+			name: "Std - single line (valid)",
+			contents: `package fixtures
+import . "fmt"
+`,
+		},
+		{
 			name: "Local (valid)",
 			contents: `package fixtures
 import (
     "github.com/pavius/impi/a"
     // some comment
-    "github.com/pavius/impi/b"
+    _ "github.com/pavius/impi/b" // comment
     "github.com/pavius/impi/c"
 )
+`,
+		},
+		{
+			name: "Local - single line (valid)",
+			contents: `package fixtures
+import "github.com/pavius/impi"
 `,
 		},
 		{
 			name: "Third party (valid)",
 			contents: `package fixtures
 import (
-    "github.com/another/3rdparty"
+    alias "github.com/another/3rdparty"
     "github.com/some/thirdparty"
 )
+`,
+		},
+		{
+			name: "Third party - single line (valid)",
+			contents: `package fixtures
+import alias "github.com/another/3rdparty" // comment
 `,
 		},
 		{
@@ -244,6 +262,25 @@ import (
 */
 import "C"
 `,
+		},
+		{
+			name: "3rd party group split into separate declaration",
+			contents: `package fixtures
+import (
+    "fmt"
+    "os"
+    "path"
+
+    "github.com/pavius/impi/a"
+    "github.com/pavius/impi/b"
+    "github.com/pavius/impi/c"
+)
+
+import "github.com/some/thirdparty"
+`,
+			expectedErrorStrings: []string{
+				"Multiple import declarations not permitted, 2 observed",
+			},
 		},
 	}
 

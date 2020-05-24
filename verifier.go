@@ -1,11 +1,10 @@
 package impi
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
+	"go/ast"
 	"go/parser"
-	"go/scanner"
 	"go/token"
 	"io"
 	"io/ioutil"
@@ -23,7 +22,7 @@ type verifier struct {
 }
 
 type importInfoGroup struct {
-	importInfos []*importInfo
+	importInfos []importInfo
 }
 
 type importType int
@@ -45,7 +44,6 @@ var importTypeName = []string{
 }
 
 type verificationScheme interface {
-
 	// getMaxNumGroups returns max number of groups the scheme allows
 	getMaxNumGroups() int
 
@@ -56,9 +54,16 @@ type verificationScheme interface {
 	getAllowedImportOrders() [][]importType
 }
 
+type importDeclaration struct {
+	lineNumStart int
+	lineNumEnd   int
+	importInfos  []importInfo
+}
+
 type importInfo struct {
-	lineNum        int
-	lineValue      string
+	lineNumStart   int
+	lineNumEnd     int
+	lineNumImport  int
 	path           string
 	classifiedType importType
 }
@@ -88,30 +93,27 @@ func (v *verifier) verify(sourceFileReader io.ReadSeeker, verifyOptions *VerifyO
 	}
 
 	// get lines on which imports start and end
-	importLineNumbers, err := v.getImportPos(sourceFileReader)
+	importDecls, err := v.parseImports(sourceFileReader)
 	if err != nil {
 		return err
 	}
 
+	// special case: we permit a separate declaration for `import "C"` as this is typically
+	// preceded by comment preamble
+	importDecls = filterImportC(importDecls)
+
 	// if there's nothing, do nothing
-	if len(importLineNumbers) == 0 {
+	if len(importDecls) == 0 {
 		return nil
 	}
 
-	// get import lines - the value of the source file from the first import to the last
-	importInfos, err := v.readImportInfos(importLineNumbers[0],
-		importLineNumbers[len(importLineNumbers)-1],
-		sourceFileReader)
-
-	if err != nil {
-		return err
+	// we do not permit multiple declarations (other than the special case mentioned above)
+	if len(importDecls) > 1 {
+		return fmt.Errorf("Multiple import declarations not permitted, %d observed", len(importDecls))
 	}
 
 	// group the import lines we got based on newlines separating the groups
-	importInfoGroups := v.groupImportInfos(importInfos, importLineNumbers)
-
-	// classify import info types - for each info type assign an "importType"
-	v.classifyImportTypes(importInfoGroups)
+	importInfoGroups := v.groupImports(importDecls)
 
 	// get scheme by type
 	verificationScheme, err := v.getVerificationScheme()
@@ -144,132 +146,104 @@ func (v *verifier) verify(sourceFileReader io.ReadSeeker, verifyOptions *VerifyO
 	return nil
 }
 
-func (v *verifier) groupImportInfos(importInfos []importInfo, importLineNumbers []int) []importInfoGroup {
+func (v *verifier) groupImports(importDecls []importDeclaration) []importInfoGroup {
+	var groups []importInfoGroup
 
-	// initialize an import group with the first group already inserted
-	importInfoGroups := []importInfoGroup{
-		{},
+	for _, importDecl := range importDecls {
+		var (
+			lastLine int
+			group    importInfoGroup
+		)
+		for _, info := range importDecl.importInfos {
+			if lastLine > 0 && info.lineNumStart != lastLine+1 {
+				// line number has jumped ahead by more than 1, so start a new group
+				groups = append(groups, group)
+				group = importInfoGroup{}
+			}
+
+			group.importInfos = append(group.importInfos, info)
+			lastLine = info.lineNumEnd
+		}
+		if len(group.importInfos) > 0 {
+			// ensure the final group is appended
+			groups = append(groups, group)
+		}
 	}
 
-	// set current group - it'll change as new groups are found
-	currentImportGroupIndex := 0
-
-	// split the imports into groups, where groups are separated with empty lines
-	for _, importInfoInstance := range importInfos {
-
-		// if we found an empty line - open a new group
-		if len(importInfoInstance.lineValue) == 0 {
-			importInfoGroups = append(importInfoGroups, importInfoGroup{})
-			currentImportGroupIndex++
-
-			// skip line
-			continue
-		}
-
-		// if this line doesn't hold a valid import (e.g. comment, comment block) - just ignore it. this helps
-		// us use the parser outputs as the source of whether or not this is an import or a comment
-		if findIntInIntSlice(importLineNumbers, importInfoInstance.lineNum) == -1 {
-			continue
-		}
-
-		// add import info copy
-		importInfoGroups[currentImportGroupIndex].importInfos = append(importInfoGroups[currentImportGroupIndex].importInfos, &importInfo{
-			lineNum:   importInfoInstance.lineNum,
-			lineValue: importInfoInstance.lineValue,
-			path:      importInfoInstance.path,
-		})
-	}
-
-	return v.filterImportC(importInfoGroups)
+	return groups
 }
 
 // filter out single `import "C"` from groups since it needs to be on it's own line
-func (v *verifier) filterImportC(importInfoGroups []importInfoGroup) []importInfoGroup {
-	var filteredGroups []importInfoGroup
+func filterImportC(importDecls []importDeclaration) []importDeclaration {
+	var filteredDecls []importDeclaration
 
-	for _, importInfoGroup := range importInfoGroups {
-		if len(importInfoGroup.importInfos) == 1 && importInfoGroup.importInfos[0].path == "C" {
+	for _, importDecl := range importDecls {
+		var (
+			cImport   bool
+			stdImport bool
+		)
+		for _, decl := range importDecl.importInfos {
+			if decl.path == "C" {
+				cImport = true
+			} else {
+				stdImport = true
+			}
+		}
+		if cImport && !stdImport {
+			// this is `import "C"` only, so can be skipped over
 			continue
 		}
-		filteredGroups = append(filteredGroups, importInfoGroup)
+		filteredDecls = append(filteredDecls, importDecl)
 	}
 
-	return filteredGroups
+	return filteredDecls
 }
 
-func (v *verifier) getImportPos(sourceFileReader io.ReadSeeker) ([]int, error) {
+func (v *verifier) parseImports(sourceFileReader io.ReadSeeker) ([]importDeclaration, error){
 	sourceFileSet := token.NewFileSet()
 
-	sourceNode, err := parser.ParseFile(sourceFileSet, "", sourceFileReader, parser.ImportsOnly)
+	sourceNode, err := parser.ParseFile(sourceFileSet, "", sourceFileReader, parser.ImportsOnly|parser.ParseComments)
 	if err != nil {
 		return nil, err
 	}
 
-	var importLineNumbers []int
+	var importDecls []importDeclaration
 
-	for _, importSpec := range sourceNode.Imports {
-		importLineNumbers = append(importLineNumbers, sourceFileSet.Position(importSpec.Pos()).Line)
-	}
+	// Read each import declaration
+	for _, decl := range sourceNode.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.IMPORT {
+			continue
+		}
 
-	return importLineNumbers, nil
-}
+		importDecl := importDeclaration{
+			lineNumStart: sourceFileSet.Position(genDecl.Pos()).Line,
+			lineNumEnd:   sourceFileSet.Position(genDecl.End()).Line,
+		}
 
-func (v *verifier) readImportInfos(startLineNum int, endLineNum int, reader io.ReadSeeker) ([]importInfo, error) {
-	if _, err := reader.Seek(0, io.SeekStart); err != nil {
-		return nil, err
-	}
-
-	var importInfos []importInfo
-	s := bufio.NewScanner(reader)
-
-	for lineNum := 1; s.Scan(); lineNum++ {
-		if lineNum >= startLineNum && lineNum <= endLineNum {
-			lineValue := s.Bytes()
-			path, err := extractImportPath(lineValue)
-			if err != nil {
-				return nil, err
+		for _, spec := range genDecl.Specs {
+			importSpec := spec.(*ast.ImportSpec)
+			importLine := sourceFileSet.Position(importSpec.Pos()).Line
+			importEndLine := sourceFileSet.Position(importSpec.End()).Line
+			lineStart := importLine
+			if importSpec.Doc != nil && len(importSpec.Doc.List) > 0 {
+				// if there are comments we'll use the line of the first comment
+				lineStart = sourceFileSet.Position(importSpec.Doc.List[0].Pos()).Line
 			}
-
-			importInfos = append(importInfos, importInfo{
-				lineNum:   lineNum,
-				lineValue: string(lineValue),
-				path:      path,
+			importPath := strings.Trim(importSpec.Path.Value, `"`) // remove outer quotes
+			importDecl.importInfos = append(importDecl.importInfos, importInfo{
+				lineNumStart:   lineStart,
+				lineNumEnd:     importEndLine,
+				lineNumImport:  importLine,
+				path:           importPath,
+				classifiedType: v.classifyImportType(importPath),
 			})
 		}
+
+		importDecls = append(importDecls, importDecl)
 	}
 
-	return importInfos, nil
-}
-
-func extractImportPath(line []byte) (string, error) {
-	s := scanner.Scanner{}
-	fset := token.NewFileSet()
-	file := fset.AddFile("", fset.Base(), len(line))
-	s.Init(file, line, nil, 0)
-
-	var val string
-	for {
-		_, tok, lit := s.Scan()
-		switch tok {
-		case token.EOF:
-			return strings.Replace(val, `"`, "", -1), nil
-		case token.STRING:
-			if val != "" {
-				return "", fmt.Errorf("parsing failed, multiple strings on import line: %v", string(line))
-			}
-			val = lit
-		}
-	}
-}
-
-func findIntInIntSlice(slice []int, value int) int {
-	for sliceValueIndex, sliceValue := range slice {
-		if sliceValue == value {
-			return sliceValueIndex
-		}
-	}
-
-	return -1
+	return importDecls, nil
 }
 
 func (v *verifier) verifyImportInfoGroupsOrder(importInfoGroups []importInfoGroup) error {
@@ -305,31 +279,22 @@ func (v *verifier) verifyImportInfoGroupsOrder(importInfoGroups []importInfoGrou
 	return nil
 }
 
-func (v *verifier) classifyImportTypes(importInfoGroups []importInfoGroup) {
-	for _, importInfoGroup := range importInfoGroups {
-
-		// create slice of strings so we can compare
-		for _, importInfo := range importInfoGroup.importInfos {
-
-			// if the value doesn't contain dot, it's a standard import
-			if !strings.Contains(importInfo.path, ".") {
-				importInfo.classifiedType = importTypeStd
-				continue
-			}
-
-			// if there's no prefix specified, it's either standard or local
-			if len(v.verifyOptions.LocalPrefix) == 0 {
-				importInfo.classifiedType = importTypeLocalOrThirdParty
-				continue
-			}
-
-			if strings.HasPrefix(importInfo.path, v.verifyOptions.LocalPrefix) {
-				importInfo.classifiedType = importTypeLocal
-			} else {
-				importInfo.classifiedType = importTypeThirdParty
-			}
-		}
+func (v *verifier) classifyImportType(path string) importType {
+	// if the value doesn't contain dot, it's a standard import
+	if !strings.Contains(path, ".") {
+		return importTypeStd
 	}
+
+	// if there's no prefix specified, it's either standard or local
+	if len(v.verifyOptions.LocalPrefix) == 0 {
+		return importTypeLocalOrThirdParty
+	}
+
+	if strings.HasPrefix(path, v.verifyOptions.LocalPrefix) {
+		return importTypeLocal
+	}
+
+	return importTypeThirdParty
 }
 
 func (v *verifier) getVerificationScheme() (verificationScheme, error) {
@@ -351,8 +316,8 @@ func (v *verifier) verifyNonMixedGroups(importInfoGroups []importInfoGroup) erro
 			if importInfo.classifiedType != importGroupImportType {
 				return fmt.Errorf("Imports of different types are not allowed in the same group (%d): %s != %s",
 					importInfoGroupIndex,
-					importInfoGroup.importInfos[0].lineValue,
-					importInfo.lineValue)
+					importInfoGroup.importInfos[0].path,
+					importInfo.path)
 			}
 		}
 	}
