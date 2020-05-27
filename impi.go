@@ -1,6 +1,7 @@
 package impi
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -9,14 +10,12 @@ import (
 	"strings"
 
 	"github.com/kisielk/gotool"
+	"golang.org/x/sync/errgroup"
 )
 
 // Impi is a single instance that can perform verification on a path
 type Impi struct {
 	numWorkers      int
-	resultChan      chan interface{}
-	filePathsChan   chan string
-	stopChan        chan bool
 	verifyOptions   *VerifyOptions
 	SkipPathRegexes []*regexp.Regexp
 }
@@ -25,7 +24,6 @@ type Impi struct {
 type ImportGroupVerificationScheme int
 
 const (
-
 	// ImportGroupVerificationSchemeSingle allows for a single, sorted group
 	ImportGroupVerificationSchemeSingle = ImportGroupVerificationScheme(iota)
 
@@ -70,10 +68,7 @@ type ErrorReporter interface {
 // NewImpi creates a new impi instance
 func NewImpi(numWorkers int) (*Impi, error) {
 	newImpi := &Impi{
-		numWorkers:    numWorkers,
-		resultChan:    make(chan interface{}, 1024),
-		filePathsChan: make(chan string),
-		stopChan:      make(chan bool),
+		numWorkers: numWorkers,
 	}
 
 	return newImpi, nil
@@ -82,7 +77,6 @@ func NewImpi(numWorkers int) (*Impi, error) {
 // Verify will iterate over the path and start verifying import correctness within
 // all .go files in the path. Path follows go tool semantics (e.g. ./...)
 func (i *Impi) Verify(rootPath string, verifyOptions *VerifyOptions, errorReporter ErrorReporter) error {
-
 	// save stuff for current session
 	i.verifyOptions = verifyOptions
 
@@ -96,25 +90,45 @@ func (i *Impi) Verify(rootPath string, verifyOptions *VerifyOptions, errorReport
 		i.SkipPathRegexes = append(i.SkipPathRegexes, skipPathRegex)
 	}
 
-	// spin up the workers do handle all the data in the channel. workers will die
-	if err := i.createWorkers(i.numWorkers); err != nil {
+	numErrors := 0
+	resultsCh := make(chan VerificationError)
+	filePathsCh := make(chan string, i.numWorkers)
+
+	g, ctx := errgroup.WithContext(context.TODO())
+	g.Go(func() error {
+		for res := range resultsCh {
+			errorReporter.Report(res)
+			numErrors++
+		}
+		return nil
+	})
+	g.Go(func() error {
+		defer close(filePathsCh)
+		// When the populate paths function finishes up (error or not), filePathsCh will be closed. This will
+		// allow the workers goroutine to finish up, as all iterations over this channel will stop.
+		return i.populatePathsChan(ctx, rootPath, filePathsCh)
+	})
+	g.Go(func() error {
+		defer close(resultsCh)
+		// If all workers fail, the results reading goroutine will safely stop as resultsCh becomes closed. The
+		// file path populating goroutine will end up trying to write to filePathsCh whilst nothing is reading
+		// from it; deadlock is prevented here because errgroup will cancel the context that is passed down.
+		// resultsCh is always going to be read to completion (there is no error cases in the results reading
+		// goroutine), so there is no possibility of deadlock when trying to write to this channel.
+		return i.createWorkers(filePathsCh, resultsCh)
+	})
+	if err := g.Wait(); err != nil {
 		return err
 	}
 
-	// populate paths channel from path. paths channel will contain .go source file paths
-	if err := i.populatePathsChan(rootPath); err != nil {
-		return err
-	}
-
-	// wait for worker completion. if an error was reported, return error
-	if numErrors := i.waitWorkerCompletion(errorReporter); numErrors != 0 {
+	if numErrors != 0 {
 		return fmt.Errorf("Found %d errors", numErrors)
 	}
 
 	return nil
 }
 
-func (i *Impi) populatePathsChan(rootPath string) error {
+func (i *Impi) populatePathsChan(ctx context.Context, rootPath string, filePathsCh chan<- string) error {
 	// TODO: this should be done in parallel
 
 	// get all the packages in the root path, following go 1.9 semantics
@@ -141,85 +155,47 @@ func (i *Impi) populatePathsChan(rootPath string) error {
 					continue
 				}
 
-				i.addFilePathToFilePathsChan(path.Join(packagePath, fileInfo.Name()))
+				if err := i.addFilePathToFilePathsChan(ctx, path.Join(packagePath, fileInfo.Name()), filePathsCh); err != nil {
+					return err
+				}
 			}
 
 		} else {
-
 			// shove path to channel if passes filter
-			i.addFilePathToFilePathsChan(packagePath)
+			if err := i.addFilePathToFilePathsChan(ctx, packagePath, filePathsCh); err != nil {
+				return err
+			}
 		}
-	}
-
-	// close the channel to signify we won't add any more data
-	close(i.filePathsChan)
-
-	return nil
-}
-
-func (i *Impi) waitWorkerCompletion(errorReporter ErrorReporter) int {
-	numWorkersComplete := 0
-	numErrorsReported := 0
-
-	for result := range i.resultChan {
-		switch typedResult := result.(type) {
-		case VerificationError:
-			errorReporter.Report(typedResult)
-			numErrorsReported++
-		case bool:
-			numWorkersComplete++
-		}
-
-		// if we're done, break the loop
-		if numWorkersComplete == i.numWorkers {
-			break
-		}
-	}
-
-	return numErrorsReported
-}
-
-func (i *Impi) createWorkers(numWorkers int) error {
-	for workerIndex := 0; workerIndex < numWorkers; workerIndex++ {
-		go i.verifyPathsFromChan()
 	}
 
 	return nil
 }
 
-func (i *Impi) verifyPathsFromChan() error {
-
-	// create a verifier with which we'll verify modules
-	verifier, err := newVerifier()
-	if err != nil {
-		return err
-	}
-
-	// while we're not done
-	for filePath := range i.filePathsChan {
-
-		// open the file
-		file, err := os.Open(filePath)
-		if err != nil {
-			return err
-		}
-
-		// verify the path and report an error if one is found
-		if err = verifier.verify(file, i.verifyOptions); err != nil {
-			verificationError := VerificationError{
-				error:    err,
-				FilePath: filePath,
+func (i *Impi) createWorkers(filePathsCh <-chan string, resultsCh chan<- VerificationError) error {
+	var g errgroup.Group
+	for idx := 0; idx < i.numWorkers; idx++ {
+		g.Go(func() error {
+			// create a verifier with which we'll verify modules
+			verifier, err := newVerifier()
+			if err != nil {
+				return err
 			}
 
-			// write to results channel
-			i.resultChan <- verificationError
-		}
+			for filePath := range filePathsCh {
+				f, err := os.Open(filePath)
+				if err != nil {
+					return err
+				}
+
+				// verify the path and report an error if one is found
+				if err = verifier.verify(f, i.verifyOptions); err != nil {
+					resultsCh <- VerificationError{error: err, FilePath: filePath}
+				}
+			}
+			return nil
+		})
 	}
-
-	// a boolean in the result chan signifies that we're done
-	i.resultChan <- true
-
-	return nil
+	return g.Wait()
 }
 
 func isDir(path string) bool {
@@ -231,25 +207,29 @@ func isDir(path string) bool {
 	return info.IsDir()
 }
 
-func (i *Impi) addFilePathToFilePathsChan(filePath string) {
-
+func (i *Impi) addFilePathToFilePathsChan(ctx context.Context, filePath string, filePathsCh chan<- string) error {
 	// skip non-go files
 	if !strings.HasSuffix(filePath, ".go") {
-		return
+		return nil
 	}
 
 	// skip tests if not desired
 	if strings.HasSuffix(filePath, "_test.go") && i.verifyOptions.SkipTests {
-		return
+		return nil
 	}
 
 	// cmd/impi/main.go should check the patters
 	for _, skipPathRegex := range i.SkipPathRegexes {
 		if skipPathRegex.Match([]byte(filePath)) {
-			return
+			return nil
 		}
 	}
 
 	// write to paths chan
-	i.filePathsChan <- filePath
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case filePathsCh <- filePath:
+		return nil
+	}
 }
