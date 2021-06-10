@@ -12,7 +12,7 @@ type StdLocalAndThirdPartySchemeTestSuite struct {
 
 func (s *StdLocalAndThirdPartySchemeTestSuite) SetupSuite() {
 	s.options.Scheme = ImportGroupVerificationSchemeStdLocalThirdParty
-	s.options.LocalPrefix = "github.com/pavius/impi"
+	s.options.LocalPrefix = "github.com/pavius/impi,gitlab.com/pavius/impi"
 }
 
 func (s *StdLocalAndThirdPartySchemeTestSuite) TestValidAllGroups() {
@@ -36,6 +36,7 @@ import (
     // some comment
     "github.com/pavius/impi/b"
     "github.com/pavius/impi/c"
+    "gitlab.com/pavius/impi/d"
 )
 `,
 		},
@@ -86,6 +87,7 @@ import (
     // some comment
     "github.com/pavius/impi/b"
     "github.com/pavius/impi/c"
+    "gitlab.com/pavius/impi/d"
 
     // another comment
     "github.com/another/3rdparty"
@@ -105,6 +107,7 @@ import (
     // some comment
     "github.com/pavius/impi/b"
     "github.com/pavius/impi/c"
+    "gitlab.com/pavius/impi/d"
 
     // another comment
     "github.com/another/3rdparty"
@@ -128,6 +131,7 @@ import (
     "github.com/pavius/impi/b"
     // some comment
     "github.com/pavius/impi/c"
+    "gitlab.com/pavius/impi/d"
 )
 `,
 			expectedErrorStrings: []string{

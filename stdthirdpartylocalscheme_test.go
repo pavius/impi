@@ -12,7 +12,7 @@ type StdThirdPartyLocalSchemeTestSuite struct {
 
 func (s *StdThirdPartyLocalSchemeTestSuite) SetupSuite() {
 	s.options.Scheme = ImportGroupVerificationSchemeStdThirdPartyLocal
-	s.options.LocalPrefix = "github.com/pavius/impi"
+	s.options.LocalPrefix = "github.com/pavius/impi,gitlab.com/pavius/impi"
 }
 
 func (s *StdThirdPartyLocalSchemeTestSuite) TestValidAllGroups() {
@@ -40,6 +40,18 @@ import (
 `,
 		},
 		{
+			name: "Multiple Local (valid)",
+			contents: `package fixtures
+import (
+    "github.com/pavius/impi/a"
+    // some comment
+    "github.com/pavius/impi/b"
+    "github.com/pavius/impi/c"
+    "gitlab.com/pavius/impi/d"
+)
+`,
+		},
+		{
 			name: "Third party (valid)",
 			contents: `package fixtures
 import (
@@ -47,6 +59,22 @@ import (
     "github.com/some/thirdparty"
 )
 `,
+		},
+		{
+			name: "Multiple Local (invalid)",
+			contents: `package fixtures
+import (
+    "gitlab.com/pavius/impi/d"
+    "github.com/pavius/impi/a"
+    // some comment
+    "github.com/pavius/impi/b"
+    "github.com/pavius/impi/c"
+    "gitlab.com/pavius/impi/d"
+)
+`,
+			expectedErrorStrings: []string{
+				`Import group 0 is not sorted`,
+			},
 		},
 		{
 			name: "Std -> Local (valid)",
@@ -108,6 +136,7 @@ import (
     // some comment
     "github.com/pavius/impi/b"
     "github.com/pavius/impi/c"
+    "gitlab.com/pavius/impi/d"
 )
 `,
 		},
@@ -123,6 +152,7 @@ import (
     "github.com/pavius/impi/b"
     // some comment
     "github.com/pavius/impi/c"
+    "gitlab.com/pavius/impi/d"
 
     // another comment
     "github.com/another/3rdparty"

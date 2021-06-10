@@ -323,10 +323,14 @@ func (v *verifier) classifyImportTypes(importInfoGroups []importInfoGroup) {
 				continue
 			}
 
-			if strings.HasPrefix(importInfo.path, v.verifyOptions.LocalPrefix) {
-				importInfo.classifiedType = importTypeLocal
-			} else {
-				importInfo.classifiedType = importTypeThirdParty
+			for _, p := range strings.Split(v.verifyOptions.LocalPrefix, ",") {
+				p := strings.TrimSpace(p)
+				if strings.HasPrefix(importInfo.path, p) {
+					importInfo.classifiedType = importTypeLocal
+					break
+				} else {
+					importInfo.classifiedType = importTypeThirdParty
+				}
 			}
 		}
 	}
